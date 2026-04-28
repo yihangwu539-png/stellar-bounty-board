@@ -10,10 +10,33 @@ export interface ContributorProfile {
   address?: string;
   completedLabels: string[];
   preferredRepos: string[];
+  skills: string[];
   averageRewardRange: {
     min: number;
     max: number;
   };
+}
+
+/**
+ * Compute a skill-matching score between a bounty's tags/labels and a
+ * contributor's declared skill tags. The score is normalized to [0, 1].
+ *
+ * - Returns 0 when either skills or tags is empty (no basis for matching).
+ * - Returns 1 when every skill appears in the bounty's labels (full overlap).
+ * - Uses case-insensitive comparison.
+ */
+export function scoreMatch(bounty: Bounty, skills: string[]): number {
+  if (!skills.length || !bounty.labels.length) return 0;
+
+  const normalizedSkills = skills.map((s) => s.toLowerCase());
+  const normalizedLabels = bounty.labels.map((l) => l.toLowerCase());
+
+  const matchingCount = normalizedSkills.filter((skill) =>
+    normalizedLabels.includes(skill)
+  ).length;
+
+  // Score = matching skills / total skills (fraction of contributor's skills covered)
+  return matchingCount / normalizedSkills.length;
 }
 
 const LABEL_WEIGHTS: Record<string, number> = {
@@ -117,7 +140,15 @@ export function generateRecommendations(
       };
     })
     .filter(rec => rec.score > 0.1) // Only include meaningful recommendations
-    .sort((a, b) => b.score - a.score)
+    .sort((a, b) => {
+      // Primary sort: recommendation score descending
+      if (b.score !== a.score) return b.score - a.score;
+      // Tiebreaker: skill-match score descending
+      const profileSkills = profile.skills ?? [];
+      const matchA = scoreMatch(a.bounty, profileSkills);
+      const matchB = scoreMatch(b.bounty, profileSkills);
+      return matchB - matchA;
+    })
     .slice(0, limit);
 
   return recommendations;
@@ -127,6 +158,7 @@ export function createDefaultProfile(): ContributorProfile {
   return {
     completedLabels: [],
     preferredRepos: [],
+    skills: [],
     averageRewardRange: {
       min: 0,
       max: 1000,
